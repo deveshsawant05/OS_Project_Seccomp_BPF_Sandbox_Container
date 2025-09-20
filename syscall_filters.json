@@ -1,0 +1,191 @@
+{
+  "filters": {
+    "basic_seccomp": {
+      "description": "Basic filter allowing essential operations only",
+      "allowed": [
+        "exit",
+        "exit_group",
+        "read",
+        "write",
+        "brk",
+        "mmap",
+        "munmap",
+        "time",
+        "gettimeofday"
+      ],
+      "blocked": [
+        "open",
+        "openat",
+        "socket",
+        "connect",
+        "execve",
+        "fork",
+        "clone",
+        "unlink",
+        "All other syscalls"
+      ]
+    },
+    "file_operations": {
+      "description": "Restricts file operations, blocks dangerous ones",
+      "allowed": [
+        "exit",
+        "exit_group",
+        "read",
+        "write",
+        "close",
+        "brk",
+        "mmap",
+        "munmap",
+        "rt_sigreturn",
+        "open",
+        "openat",
+        "stat",
+        "fstat",
+        "lstat",
+        "access",
+        "getdents",
+        "getdents64"
+      ],
+      "blocked": [
+        "unlink",
+        "unlinkat",
+        "rmdir",
+        "rename",
+        "renameat",
+        "chmod",
+        "fchmod",
+        "chown",
+        "fchown",
+        "execve",
+        "execveat",
+        "fork",
+        "vfork",
+        "clone"
+      ],
+      "action": "Returns EPERM for other syscalls"
+    },
+    "network_sandbox": {
+      "description": "Blocks all network operations",
+      "allowed": [
+        "exit",
+        "exit_group",
+        "read",
+        "write",
+        "close",
+        "brk",
+        "mmap",
+        "munmap",
+        "open",
+        "openat",
+        "stat",
+        "fstat"
+      ],
+      "blocked": [
+        "socket",
+        "bind",
+        "connect",
+        "listen",
+        "accept",
+        "accept4",
+        "sendto",
+        "recvfrom",
+        "sendmsg",
+        "recvmsg",
+        "shutdown",
+        "setsockopt",
+        "getsockopt"
+      ],
+      "action": "Returns ENETDOWN for network syscalls"
+    },
+    "shell_sandbox": {
+      "description": "Sandboxed shell with limited permissions",
+      "allowed": [
+        "exit",
+        "exit_group",
+        "read",
+        "write",
+        "close",
+        "brk",
+        "mmap",
+        "munmap",
+        "mprotect",
+        "open (read-only)",
+        "stat",
+        "fstat",
+        "lstat",
+        "access",
+        "getdents",
+        "getdents64",
+        "getcwd",
+        "chdir",
+        "fork",
+        "vfork",
+        "clone",
+        "execve",
+        "wait4",
+        "waitpid",
+        "rt_sigaction",
+        "rt_sigprocmask",
+        "rt_sigreturn",
+        "getpid",
+        "getuid",
+        "geteuid"
+      ],
+      "blocked": [
+        "socket",
+        "connect",
+        "bind",
+        "unlink",
+        "rmdir",
+        "chmod",
+        "chown",
+        "kill (except self)",
+        "ptrace",
+        "reboot"
+      ]
+    }
+  },
+  "common_patterns": {
+    "always_allow": [
+      "exit",
+      "exit_group",
+      "rt_sigreturn"
+    ],
+    "memory_management": [
+      "brk",
+      "mmap",
+      "munmap",
+      "mprotect"
+    ],
+    "basic_io": [
+      "read",
+      "write",
+      "close"
+    ],
+    "dangerous": [
+      "execve",
+      "fork",
+      "clone",
+      "ptrace",
+      "reboot",
+      "setuid",
+      "setgid"
+    ],
+    "network": [
+      "socket",
+      "bind",
+      "connect",
+      "listen",
+      "accept",
+      "sendto",
+      "recvfrom"
+    ]
+  },
+  "return_actions": {
+    "SECCOMP_RET_ALLOW": "Allow the syscall",
+    "SECCOMP_RET_KILL_PROCESS": "Kill entire process",
+    "SECCOMP_RET_ERRNO": "Return errno (e.g., EPERM, ENETDOWN)",
+    "SECCOMP_RET_TRAP": "Send SIGSYS signal",
+    "SECCOMP_RET_LOG": "Log and allow"
+  }
+}
