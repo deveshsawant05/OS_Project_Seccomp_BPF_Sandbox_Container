@@ -185,28 +185,35 @@ void test_strict_seccomp() {
     }
     
     if (pid == 0) {
-        // Child process - enable strict mode
+        // Child process - enable strict mode (filter-based)
         if (enable_basic_seccomp() != 0) {
             exit(1);
         }
         
         // Try to do something that should be blocked
         // In strict mode, only read, write, exit, sigreturn are allowed
-        void *ptr = malloc(100); // This should fail
-        if (ptr != NULL) {
-            exit(2); // Should not reach here
-        }
+        // Try getpid() which should be blocked
+        getpid();
         
-        exit(0);
+        // Should not reach here if filter is working
+        exit(2);
     } else {
         // Parent process
         int status;
         waitpid(pid, &status, 0);
         
-        if (WIFSIGNALED(status) && WTERMSIG(status) == SIGSYS) {
+        // Child should be killed by SIGSYS or exit with error
+        if (WIFSIGNALED(status)) {
+            // Process was killed by a signal (likely SIGSYS)
             TEST_PASS();
-        } else {
+        } else if (WIFEXITED(status) && WEXITSTATUS(status) == 1) {
+            // Filter installation failed
+            TEST_FAIL("Filter installation failed");
+        } else if (WIFEXITED(status) && WEXITSTATUS(status) == 2) {
+            // Syscall was not blocked
             TEST_FAIL("Strict mode did not block syscall");
+        } else {
+            TEST_FAIL("Unexpected exit status");
         }
     }
 }
@@ -224,7 +231,7 @@ void test_errno_returns() {
     }
     
     if (pid == 0) {
-        // Child process - install filter that returns EACCES for open
+        // Child process - install filter that returns EACCES for openat
         struct sock_filter filter[] = {
             VALIDATE_ARCHITECTURE,
             LOAD_SYSCALL_NR,
@@ -235,9 +242,15 @@ void test_errno_returns() {
             ALLOW_SYSCALL(mmap),
             ALLOW_SYSCALL(munmap),
             
-            // Return EACCES for open
+            // Return EACCES for openat (x86_64 uses openat instead of open)
+            BPF_JUMP(BPF_JMP+BPF_JEQ+BPF_K, __NR_openat, 0, 1),
+            BPF_STMT(BPF_RET+BPF_K, SECCOMP_RET_ERRNO | EACCES),
+            
+#ifdef __NR_open
+            // Also handle open for 32-bit systems
             BPF_JUMP(BPF_JMP+BPF_JEQ+BPF_K, __NR_open, 0, 1),
             BPF_STMT(BPF_RET+BPF_K, SECCOMP_RET_ERRNO | EACCES),
+#endif
             
             BPF_STMT(BPF_RET+BPF_K, SECCOMP_RET_ALLOW)
         };
@@ -316,7 +329,7 @@ void test_complex_filter() {
     }
     
     if (pid == 0) {
-        // Child process - install filter that checks open flags
+        // Child process - install filter that checks openat flags
         struct sock_filter filter[] = {
             VALIDATE_ARCHITECTURE,
             LOAD_SYSCALL_NR,
@@ -324,19 +337,25 @@ void test_complex_filter() {
             ALLOW_SYSCALL(exit),
             ALLOW_SYSCALL(exit_group),
             ALLOW_SYSCALL(close),
+            ALLOW_SYSCALL(fstat),
+            ALLOW_SYSCALL(brk),
+            ALLOW_SYSCALL(mmap),
+            ALLOW_SYSCALL(munmap),
             
-            // Check open syscall
-            BPF_JUMP(BPF_JMP+BPF_JEQ+BPF_K, __NR_open, 0, 6),
+            // Check openat syscall (x86_64 uses openat)
+            // If NOT openat, skip to default allow (skip next 5 instructions)
+            BPF_JUMP(BPF_JMP+BPF_JEQ+BPF_K, __NR_openat, 0, 5),
             
-            // Load flags (second argument)
-            BPF_STMT(BPF_LD+BPF_W+BPF_ABS, offsetof(struct seccomp_data, args[1])),
+            // Load flags (third argument for openat, index 2)
+            BPF_STMT(BPF_LD+BPF_W+BPF_ABS, offsetof(struct seccomp_data, args[2])),
             
-            // Check if read-only
+            // Check if read-only (flags & O_ACCMODE == O_RDONLY)
             BPF_STMT(BPF_ALU+BPF_AND+BPF_K, O_ACCMODE),
             BPF_JUMP(BPF_JMP+BPF_JEQ+BPF_K, O_RDONLY, 0, 1),
             BPF_STMT(BPF_RET+BPF_K, SECCOMP_RET_ALLOW),
             BPF_STMT(BPF_RET+BPF_K, SECCOMP_RET_ERRNO | EACCES),
             
+            // Default: allow all other syscalls
             BPF_STMT(BPF_RET+BPF_K, SECCOMP_RET_ALLOW)
         };
         

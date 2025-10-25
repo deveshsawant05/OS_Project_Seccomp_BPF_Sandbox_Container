@@ -6,7 +6,7 @@ echo "Seccomp Filter Performance Benchmark"
 echo "==================================="
 echo ""
 
-cd /app || exit
+cd / || exit
 
 # Rebuild to ensure latest version
 echo "Building project..."

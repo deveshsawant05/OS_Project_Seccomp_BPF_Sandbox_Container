@@ -104,19 +104,33 @@ void setup_signal_handler(void) {
 
 /**
  * Enable basic seccomp mode (only allows exit, sigreturn, read, write)
+ * Note: Uses FILTER mode instead of STRICT mode for better compatibility
  */
 int enable_basic_seccomp(void) {
-    if (prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) == -1) {
-        perror("prctl(PR_SET_NO_NEW_PRIVS)");
-        return SECCOMP_ERROR;
-    }
-
-    if (prctl(PR_SET_SECCOMP, SECCOMP_MODE_STRICT) == -1) {
-        perror("prctl(PR_SET_SECCOMP)");
-        return SECCOMP_ERROR;
-    }
-
-    return SECCOMP_SUCCESS;
+    // In strict mode, only read, write, exit, and sigreturn are allowed
+    // We'll simulate this with a filter for better compatibility
+    struct sock_filter filter[] = {
+        // Validate architecture
+        BPF_STMT(BPF_LD+BPF_W+BPF_ABS, offsetof(struct seccomp_data, arch)),
+        BPF_JUMP(BPF_JMP+BPF_JEQ+BPF_K, ARCH_NR, 1, 0),
+        BPF_STMT(BPF_RET+BPF_K, SECCOMP_RET_KILL_PROCESS),
+        
+        // Load syscall number
+        BPF_STMT(BPF_LD+BPF_W+BPF_ABS, offsetof(struct seccomp_data, nr)),
+        
+        // Allow only read, write, exit, sigreturn, exit_group
+        BPF_JUMP(BPF_JMP+BPF_JEQ+BPF_K, __NR_read, 4, 0),
+        BPF_JUMP(BPF_JMP+BPF_JEQ+BPF_K, __NR_write, 3, 0),
+        BPF_JUMP(BPF_JMP+BPF_JEQ+BPF_K, __NR_exit, 2, 0),
+        BPF_JUMP(BPF_JMP+BPF_JEQ+BPF_K, __NR_exit_group, 1, 0),
+        BPF_JUMP(BPF_JMP+BPF_JEQ+BPF_K, __NR_rt_sigreturn, 0, 1),
+        BPF_STMT(BPF_RET+BPF_K, SECCOMP_RET_ALLOW),
+        
+        // Kill process for any other syscall
+        BPF_STMT(BPF_RET+BPF_K, SECCOMP_RET_KILL_PROCESS)
+    };
+    
+    return install_seccomp_filter(filter, sizeof(filter)/sizeof(filter[0]));
 }
 
 /**
